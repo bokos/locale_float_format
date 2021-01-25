@@ -1,0 +1,3 @@
+= locale_float_format
+
+Redmine plugin. Enables input and display of float custom fields with decimal separator set in locale.
