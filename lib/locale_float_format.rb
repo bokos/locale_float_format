@@ -17,17 +17,42 @@ module LocaleFloatFormat
     end
   end
 
+  class Hooks < Redmine::Hook::ViewListener
+    def controller_issues_bulk_edit_before_save(context={ })
+      separator = I18n.t('number.format.separator', default: '.')
+      context[:issue].custom_field_values.map { |cfv|
+        params_val = context.dig(:params,:issue,:custom_field_values, cfv.custom_field.id.to_s)
+        if cfv.custom_field.field_format == 'float' && cfv.value
+          cfv.value = cfv.value_was&.tr('.', separator) if params_val.nil?
+        end
+      }
+      return ''
+    end
+  end
+
   module FloatFormatPatch
     def self.included(base)
       base.class_eval do
+        def pad_number( number, min_decimals=2 )
+          return number if number.blank?
+          decimals = (number[/\.(\d+)/,1] || '').length
+          number << "." if decimals == 0
+          number << "0"*[0,min_decimals-decimals].max
+        end
+
         def set_custom_field_value(custom_field, custom_field_value, value)
           delimiter = I18n.t('number.format.delimiter', default: ',')
           separator = I18n.t('number.format.separator', default: '.')
-          value&.tr(delimiter, '')&.tr(separator, '.')
+          if value && value.include?(',')
+            pad_number(value&.sub(/.*\K#{Regexp.escape(separator)}/, '.')
+                 &.gsub(/[#{Regexp.escape(delimiter)}](?=.*[#{Regexp.escape(delimiter)}])/, ''))
+          else
+            pad_number(value&.tr(delimiter, ''))
+          end
         end
 
         def edit_tag(view, tag_id, tag_name, custom_value, options={})
-          view.text_field_tag(tag_name, ApplicationController.helpers.number_with_delimiter(custom_value.value), options.merge(:id => tag_id))
+          view.text_field_tag(tag_name, ApplicationController.helpers.number_with_delimiter(pad_number(custom_value.value)), options.merge(:id => tag_id))
         end
       end
     end
@@ -40,8 +65,8 @@ module LocaleFloatFormat
           issue = arg.is_a?(Issue) ? arg : Issue.visible.find(arg)
           self.attributes = issue.attributes.dup.except("id", "root_id", "parent_id", "lft", "rgt", "created_on", "updated_on", "status_id", "closed_on")
           self.custom_field_values = issue.custom_field_values.inject({}) { |h,v|
-            h[v.custom_field_id] = v.custom_field.field_format == 'float' ?
-              ApplicationController.helpers.number_with_delimiter(v.value) : v.value; h
+            h[v.custom_field_id] = v.custom_field.field_format == 'float' && v.value.present? ?
+              ApplicationController.helpers.number_with_delimiter(v.value.to_f) : v.value; h
           }
           if options[:keep_status]
             self.status = issue.status
