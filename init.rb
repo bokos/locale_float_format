@@ -1,5 +1,3 @@
-require 'locale_float_format'
-
 Redmine::Plugin.register :locale_float_format do
   name 'Locale Float Format plugin'
   author 'bokos'
